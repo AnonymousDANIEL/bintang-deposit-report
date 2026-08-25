@@ -1,0 +1,14 @@
+这是 Bintang44 Telegram Deposit Report 的稳定 Railway 版本。
+
+关键逻辑：
+- API: https://90018.gawlt.com/api/v1/index.php
+- Merchant ID: 90018
+- 当天同一条 Telegram message 自动 edit；新一天自动发新 message。
+- 固定显示 0100,0200,...,2300,0000 全部 24 行。
+- 未到时间：Count=0、Amount=RM 0.00、TOTAL=0 / RM 0.00。
+- 到时间才显示该小时真实数据和真实累计 TOTAL。
+- Telegram plain text，不用 <pre>/<code>，不要 Copy 按键。
+- Session/Token 失效自动重新 login；Railway 常驻运行。
+- 密码、tracking code、Telegram token 只放 Railway Variables，不写入代码。
+
+如果以后要修改，请以这个 ZIP 为基准，不要改坏以上逻辑。

@@ -1,0 +1,36 @@
+Bintang44 Railway variables
+============================
+
+Required / main variables:
+
+REPORT_LINE_STYLE=full
+REPORT_TIMEZONE=Asia/Kuala_Lumpur
+SITE_API_URL=https://90018.gawlt.com/api/v1/index.php
+SITE_MERCHANT_ID=90018
+SITE_PASSWORD=YOUR_PASSWORD
+SITE_TRACKING_CODE=YOUR_CURRENT_TRACKING_CODE_IF_REQUIRED
+SITE_USERNAME=YOUR_USERNAME
+STATE_PATH=/data/bintang44_state.json
+TARGET_COUNT=3500
+TARGET_DEPOSIT=60000
+TELEGRAM_BOT_TOKEN=YOUR_BOT_TOKEN
+TELEGRAM_CHAT_ID=YOUR_CHAT_ID
+
+Recommended stability variables (optional; code already has these defaults):
+RUN_FOREVER=true
+SESSION_GUARD_ENABLED=true
+SESSION_GUARD_SECONDS=30
+AUTH_RELOGIN_RETRIES=5
+REPORT_GRACE_SECONDS=60
+REPORT_RETRY_SECONDS=30
+REQUEST_TIMEOUT_SECONDS=30
+REQUEST_RETRIES=3
+VALIDATION_RETRIES=3
+VALIDATION_RETRY_DELAY_SECONDS=4
+STRICT_FINAL_DAILY_VALIDATION=false
+SHOW_VALIDATION_STATUS=false
+
+IMPORTANT:
+- Do not put real passwords/tokens inside the code files.
+- Put secrets only in Railway Variables.
+- Mount a Railway Volume at /data so Telegram message state survives deploy/restart.
