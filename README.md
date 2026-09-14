@@ -1,3 +1,7 @@
+# Bintang44 Deposit Report — Auto TRACKING_CODE Final
+
+This version automatically refreshes/generates a fresh 64-character `trackingCode` on every login and on session recovery. Keep `AUTO_TRACKING_CODE=true` and leave `SITE_TRACKING_CODE` blank in Railway.
+
 # Bintang44 Telegram Deposit Report — Railway Final
 
 This project is the Bintang44 version of the stable hourly Telegram report.

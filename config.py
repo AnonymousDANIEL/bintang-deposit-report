@@ -35,6 +35,7 @@ class Config:
     site_password: str
     site_merchant_id: str
     site_tracking_code: str
+    auto_tracking_code: bool
     site_passcode_2fa: str
     site_captcha_output: str
 
@@ -81,6 +82,7 @@ class Config:
             site_password=_env("SITE_PASSWORD", required=True),
             site_merchant_id=_env("SITE_MERCHANT_ID", "90018", required=True),
             site_tracking_code=_env("SITE_TRACKING_CODE", ""),
+            auto_tracking_code=_bool("AUTO_TRACKING_CODE", True),
             site_passcode_2fa=_env("SITE_PASSCODE_2FA", ""),
             site_captcha_output=_env("SITE_CAPTCHA_OUTPUT", ""),
             telegram_bot_token=_env("TELEGRAM_BOT_TOKEN", required=True),

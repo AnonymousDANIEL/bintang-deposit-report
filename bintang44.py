@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import logging
+import re
+import secrets
+import string
 import time
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 from zoneinfo import ZoneInfo
 
 import requests
@@ -15,6 +18,12 @@ from config import Config
 
 log = logging.getLogger(__name__)
 MONEY = Decimal("0.01")
+TRACKING_ALPHABET = string.ascii_letters + string.digits
+TRACKING_RE = re.compile(
+    r'''(?:trackingCode|tracking_code)["'\s:=]+["']([A-Za-z0-9_-]{24,128})["']''',
+    re.IGNORECASE,
+)
+SCRIPT_RE = re.compile(r'''<script[^>]+src=["']([^"']+)["']''', re.IGNORECASE)
 
 
 class BintangError(RuntimeError):
@@ -35,7 +44,7 @@ class Totals:
 
 
 class BintangClient:
-    """Long-lived Bintang44 API client with automatic session recovery."""
+    """Long-lived Bintang44 API client with automatic session/tracking recovery."""
 
     def __init__(self, cfg: Config):
         self.cfg = cfg
@@ -58,6 +67,7 @@ class BintangClient:
         self.access_id = ""
         self.access_token = ""
         self.last_login_monotonic = 0.0
+        self.current_tracking_code = ""
 
     def _post_raw(self, form: dict[str, Any]) -> dict[str, Any]:
         last_exc: Exception | None = None
@@ -102,23 +112,17 @@ class BintangClient:
 
     @staticmethod
     def _message(payload: dict[str, Any]) -> str:
+        data = payload.get("data")
+        if isinstance(data, dict) and data.get("message"):
+            return str(data.get("message"))
         return str(payload.get("message") or payload.get("error") or payload)
 
     @classmethod
     def _looks_like_auth_failure(cls, payload: dict[str, Any]) -> bool:
         text = cls._message(payload).lower()
         needles = (
-            "token",
-            "session",
-            "login",
-            "unauthor",
-            "forbidden",
-            "access denied",
-            "accessid",
-            "access id",
-            "expired",
-            "invalid access",
-            "authentication",
+            "token", "session", "login", "unauthor", "forbidden", "access denied",
+            "accessid", "access id", "expired", "invalid access", "authentication",
         )
         return any(word in text for word in needles)
 
@@ -130,54 +134,128 @@ class BintangClient:
                 return value
         return None
 
+    @staticmethod
+    def _fresh_tracking_code() -> str:
+        # The web login sends a new 64-character alphanumeric trackingCode each login.
+        return "".join(secrets.choice(TRACKING_ALPHABET) for _ in range(64))
+
+    def _refresh_public_session_and_scrape_tracking(self) -> list[str]:
+        """Refresh browser-like cookies and opportunistically discover a trackingCode.
+
+        Most Bintang44 builds generate trackingCode in the browser. This scraper is a
+        secondary path in case the site starts embedding one in HTML/JS.
+        """
+        found: list[str] = []
+        try:
+            r = self.session.get(self.origin + "/", timeout=self.cfg.request_timeout_seconds)
+            r.raise_for_status()
+            html = r.text or ""
+            found.extend(TRACKING_RE.findall(html))
+            # Inspect a small number of same-origin JS bundles only.
+            for src in SCRIPT_RE.findall(html)[:12]:
+                url = urljoin(self.origin + "/", src)
+                if urlsplit(url).netloc != urlsplit(self.origin).netloc:
+                    continue
+                try:
+                    js = self.session.get(url, timeout=min(self.cfg.request_timeout_seconds, 15))
+                    if js.ok and len(js.text) <= 8_000_000:
+                        found.extend(TRACKING_RE.findall(js.text))
+                except requests.RequestException:
+                    pass
+        except requests.RequestException as exc:
+            log.warning("Public session refresh skipped: %s", exc)
+        # De-duplicate while preserving order.
+        out: list[str] = []
+        for code in found:
+            if code not in out:
+                out.append(code)
+        return out
+
+    def _tracking_candidates(self) -> list[tuple[str, str]]:
+        candidates: list[tuple[str, str]] = []
+        if self.cfg.auto_tracking_code:
+            # Refresh cookies first; if site exposes a code, prefer it.
+            for code in self._refresh_public_session_and_scrape_tracking():
+                candidates.append(("discovered", code))
+            # Primary path for current Bintang44 frontend: fresh 64-char code per login.
+            candidates.append(("generated", self._fresh_tracking_code()))
+        if self.cfg.site_tracking_code:
+            candidates.append(("railway-fallback", self.cfg.site_tracking_code))
+        if not candidates:
+            candidates.append(("generated", self._fresh_tracking_code()))
+
+        dedup: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for source, code in candidates:
+            if code and code not in seen:
+                seen.add(code)
+                dedup.append((source, code))
+        return dedup
+
     def login(self, *, reason: str = "normal") -> None:
-        form = {
-            "username": self.cfg.site_username,
-            "password": self.cfg.site_password,
-            "passcode2fa": self.cfg.site_passcode_2fa,
-            "trackingCode": self.cfg.site_tracking_code,
-            "captchaOutput": self.cfg.site_captcha_output,
-            "module": "/users/login",
-            "merchantId": self.cfg.site_merchant_id,
-            "accessId": "",
-            "accessToken": "",
-        }
-        payload = self._post_raw(form)
-        if not self._is_success(payload):
-            raise BintangError(
-                "Bintang44 login failed. Check SITE_USERNAME / SITE_PASSWORD / "
-                "SITE_TRACKING_CODE and any CAPTCHA/2FA requirement. "
-                f"API response: {self._message(payload)}"
+        last_payload: dict[str, Any] | None = None
+        candidates = self._tracking_candidates()
+
+        for idx, (source, tracking_code) in enumerate(candidates, start=1):
+            form = {
+                "username": self.cfg.site_username,
+                "password": self.cfg.site_password,
+                "passcode2fa": self.cfg.site_passcode_2fa,
+                "trackingCode": tracking_code,
+                "captchaOutput": self.cfg.site_captcha_output,
+                "module": "/users/login",
+                "merchantId": self.cfg.site_merchant_id,
+                "accessId": "",
+                "accessToken": "",
+            }
+            log.info(
+                "LOGIN attempt %s/%s using trackingCode source=%s len=%s",
+                idx, len(candidates), source, len(tracking_code),
+            )
+            payload = self._post_raw(form)
+            last_payload = payload
+            if self._is_success(payload):
+                self.current_tracking_code = tracking_code
+                data = payload.get("data") or {}
+                if not isinstance(data, dict):
+                    raise BintangError("Login succeeded but data is not an object")
+
+                access_id = self._first_value(data, "id", "accessId", "access_id", "adminId")
+                token = self._first_value(data, "token", "accessToken", "access_token", "authToken")
+                if not access_id:
+                    access_id = self._first_value(payload, "accessId", "access_id", "id")
+                if not token:
+                    token = self._first_value(payload, "accessToken", "access_token", "token")
+                if not access_id or not token:
+                    raise BintangError(
+                        "Login succeeded but response did not contain a usable accessId/token. "
+                        "Expected data.id plus data.token/accessToken."
+                    )
+
+                self.access_id = str(access_id)
+                self.access_token = str(token)
+                self.last_login_monotonic = time.monotonic()
+                if reason == "takeover":
+                    log.warning("SESSION TAKEOVER OK - Bintang44 session reclaimed")
+                else:
+                    log.info("Bintang44 login OK")
+                return
+
+            log.warning(
+                "LOGIN rejected with trackingCode source=%s: %s",
+                source, self._message(payload),
             )
 
-        data = payload.get("data") or {}
-        if not isinstance(data, dict):
-            raise BintangError("Login succeeded but data is not an object")
-
-        access_id = self._first_value(data, "id", "accessId", "access_id", "adminId")
-        token = self._first_value(data, "token", "accessToken", "access_token", "authToken")
-        if not access_id:
-            access_id = self._first_value(payload, "accessId", "access_id", "id")
-        if not token:
-            token = self._first_value(payload, "accessToken", "access_token", "token")
-
-        if not access_id or not token:
-            raise BintangError(
-                "Login succeeded but response did not contain a usable accessId/token. "
-                "Expected data.id plus data.token/accessToken."
-            )
-
-        self.access_id = str(access_id)
-        self.access_token = str(token)
-        self.last_login_monotonic = time.monotonic()
-        if reason == "takeover":
-            log.warning("SESSION TAKEOVER OK - Bintang44 session reclaimed")
-        else:
-            log.info("Bintang44 login OK")
+        raise BintangError(
+            "Bintang44 login failed after automatic trackingCode refresh. "
+            "Check SITE_USERNAME / SITE_PASSWORD and any CAPTCHA/2FA requirement. "
+            f"Last API response: {self._message(last_payload or {})}"
+        )
 
     def force_login(self) -> None:
         self.access_id = ""
         self.access_token = ""
+        self.current_tracking_code = ""
         self.login(reason="takeover")
 
     def _authenticated_post(self, form: dict[str, Any]) -> dict[str, Any]:
@@ -185,18 +263,14 @@ class BintangClient:
             self.login()
 
         body = dict(form)
-        body.update(
-            {
-                "merchantId": self.cfg.site_merchant_id,
-                "accessId": self.access_id,
-                "accessToken": self.access_token,
-            }
-        )
-
+        body.update({
+            "merchantId": self.cfg.site_merchant_id,
+            "accessId": self.access_id,
+            "accessToken": self.access_token,
+        })
         payload = self._post_raw(body)
         if self._is_success(payload):
             return payload
-
         if not self._looks_like_auth_failure(payload):
             raise BintangError(f"Bintang44 API rejected request: {self._message(payload)}")
 
@@ -220,11 +294,10 @@ class BintangClient:
                     )
                 log.warning(
                     "Re-login attempt %s got another auth rejection: %s",
-                    attempt,
-                    self._message(last_payload),
+                    attempt, self._message(last_payload),
                 )
-            except BintangError:
-                raise
+            except BintangError as exc:
+                log.warning("Immediate re-login attempt %s failed: %s", attempt, exc)
             except Exception as exc:
                 log.warning("Immediate re-login attempt %s failed: %s", attempt, exc)
             if attempt < self.cfg.auth_relogin_retries:
@@ -236,7 +309,6 @@ class BintangClient:
         )
 
     def session_healthcheck(self) -> None:
-        """Use a confirmed Bintang44 report endpoint as an authenticated auth probe."""
         today = datetime.now(ZoneInfo(self.cfg.report_timezone)).strftime("%Y-%m-%d")
         form = {
             "sDate": today,
@@ -252,23 +324,12 @@ class BintangClient:
         return value.strftime("%Y-%m-%d %H:%M:%S")
 
     def transaction_totals(self, start: datetime, end: datetime) -> Totals:
-        """Read server-calculated COMPLETED DEPOSIT totalCount/totalAmount."""
         form = {
-            "pageIndex": "0",
-            "includeAdmin": "1",
-            "background": "0",
-            "transactionId": "",
-            "name": "",
-            "type": "DEPOSIT",
-            "sDate": self._fmt_dt(start),
-            "eDate": self._fmt_dt(end),
-            "sCash": "",
-            "eCash": "",
-            "status": "COMPLETED",
-            "agent": "",
-            "bankId": "",
-            "otherInfo": "",
-            "module": "/transactions/getAllTransactions",
+            "pageIndex": "0", "includeAdmin": "1", "background": "0",
+            "transactionId": "", "name": "", "type": "DEPOSIT",
+            "sDate": self._fmt_dt(start), "eDate": self._fmt_dt(end),
+            "sCash": "", "eCash": "", "status": "COMPLETED", "agent": "",
+            "bankId": "", "otherInfo": "", "module": "/transactions/getAllTransactions",
         }
         payload = self._authenticated_post(form)
         data = payload.get("data") or {}
@@ -279,10 +340,7 @@ class BintangClient:
     def daily_report_totals(self, report_date: datetime) -> Totals:
         date_text = report_date.strftime("%Y-%m-%d")
         form = {
-            "sDate": date_text,
-            "eDate": date_text,
-            "period": "Daily",
-            "type": "ALL",
+            "sDate": date_text, "eDate": date_text, "period": "Daily", "type": "ALL",
             "module": "/reports/transactions",
         }
         payload = self._authenticated_post(form)

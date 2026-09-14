@@ -1,5 +1,1 @@
-BINTANG44 FINAL TEMPLATE
-Date: 2026-08-25
-Backend: https://90018.gawlt.com/api/v1/index.php
-Merchant: 90018
-Behavior: future Count/Amount/TOTAL are all zero; completed hours become real; same-day Telegram message is edited; automatic session re-login enabled.
+Bintang44 auto-tracking final - 2026-09-14

@@ -1,5 +1,5 @@
-Bintang44 Railway variables
-============================
+Bintang44 Railway variables - AUTO TRACKING_CODE FINAL
+======================================================
 
 Required / main variables:
 
@@ -7,16 +7,22 @@ REPORT_LINE_STYLE=full
 REPORT_TIMEZONE=Asia/Kuala_Lumpur
 SITE_API_URL=https://90018.gawlt.com/api/v1/index.php
 SITE_MERCHANT_ID=90018
-SITE_PASSWORD=YOUR_PASSWORD
-SITE_TRACKING_CODE=YOUR_CURRENT_TRACKING_CODE_IF_REQUIRED
 SITE_USERNAME=YOUR_USERNAME
-STATE_PATH=/data/bintang44_state.json
-TARGET_COUNT=3500
-TARGET_DEPOSIT=60000
+SITE_PASSWORD=YOUR_PASSWORD
+
+# IMPORTANT: final version automatically creates/refreshes trackingCode.
+AUTO_TRACKING_CODE=true
+# Leave blank. Only used as a fallback if you deliberately want one.
+SITE_TRACKING_CODE=
+
 TELEGRAM_BOT_TOKEN=YOUR_BOT_TOKEN
 TELEGRAM_CHAT_ID=YOUR_CHAT_ID
 
-Recommended stability variables (optional; code already has these defaults):
+TARGET_COUNT=3500
+TARGET_DEPOSIT=60000
+STATE_PATH=/data/bintang44_state.json
+
+Recommended stability variables:
 RUN_FOREVER=true
 SESSION_GUARD_ENABLED=true
 SESSION_GUARD_SECONDS=30
@@ -30,7 +36,13 @@ VALIDATION_RETRY_DELAY_SECONDS=4
 STRICT_FINAL_DAILY_VALIDATION=false
 SHOW_VALIDATION_STATUS=false
 
+Optional only when the account actually requires them:
+SITE_PASSCODE_2FA=
+SITE_CAPTCHA_OUTPUT=
+
 IMPORTANT:
-- Do not put real passwords/tokens inside the code files.
+- Do not put real passwords/tokens inside code files.
 - Put secrets only in Railway Variables.
 - Mount a Railway Volume at /data so Telegram message state survives deploy/restart.
+- If the backend later enforces interactive CAPTCHA/2FA, unattended login cannot bypass it;
+  the required valid value must be supplied legitimately.

@@ -66,9 +66,20 @@ def test_exact_layout_and_future_zero_rows():
     assert msg.count("TOTAL:") == 24
 
 
+
+def test_tracking_code_shape_and_rotation():
+    from bintang44 import BintangClient
+    a = BintangClient._fresh_tracking_code()
+    b = BintangClient._fresh_tracking_code()
+    assert len(a) == 64 and a.isalnum()
+    assert len(b) == 64 and b.isalnum()
+    assert a != b
+
 if __name__ == "__main__":
     test_2105()
     test_midnight_finalizes_previous_day()
     test_new_day_starts_new_report_date()
     test_exact_layout_and_future_zero_rows()
-    print("Bintang44 logic + format tests OK")
+    test_tracking_code_shape_and_rotation()
+    print("Bintang44 logic + format + auto tracking tests OK")
+
