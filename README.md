@@ -13,6 +13,7 @@ This project is the Bintang44 version of the stable hourly Telegram report.
 - Always displays all 24 rows in this exact order: `0100` ... `2300`, `0000`.
 - A not-yet-closed hour stays: Count `0`, Amount `RM 0.00`, TOTAL `0 / RM 0.00`.
 - When an hour closes, that row is recalculated from real `COMPLETED` `DEPOSIT` data and its cumulative TOTAL becomes real.
+- Exact-hour schedule: the worker starts the hourly read at `HH:00` (first loop tick, normally within ~2 seconds), with no extra +1 minute delay.
 - Message is plain text only; there is no `<pre>` / `<code>`, so Telegram does not show the large Copy button.
 
 ## Bintang44 backend confirmed

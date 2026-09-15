@@ -28,9 +28,9 @@ class ReportSnapshot:
 
 def closed_report_window(now: datetime, tz: ZoneInfo) -> tuple[date, datetime]:
     """
-    At XX:01+ we report the hour that just closed.
-    Example: 21:01 -> completed through 20:59:59, label 2100.
-    At 00:01 -> completed through previous day 23:59:59, label 0000.
+    At XX:00 we report the hour that just closed.
+    Example: 21:00 -> completed through 20:59:59, label 2100.
+    At 00:00 -> completed through previous day 23:59:59, label 0000.
     """
     local_now = now.astimezone(tz)
     current_hour = local_now.replace(minute=0, second=0, microsecond=0)

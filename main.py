@@ -170,7 +170,7 @@ def run_forever(cfg: Config) -> None:
     - Every SESSION_GUARD_SECONDS it probes the current authenticated session.
     - If another login invalidates the bot token, the same probe immediately
       force-logins and retries; there is no need to Restart Railway.
-    - Every hour, after REPORT_GRACE_SECONDS, it updates the report once.
+    - Every hour at HH:00, it updates the report once (no +1 minute grace).
     - A failed hourly update retries every REPORT_RETRY_SECONDS until it succeeds.
     """
     tz = ZoneInfo(cfg.report_timezone)
@@ -232,9 +232,10 @@ def run_forever(cfg: Config) -> None:
                     _send_error_once(cfg, reclaim_exc)
             next_guard_at = time.monotonic() + cfg.session_guard_seconds
 
-        # Wait a short grace period after the top of the hour so Bintang44 can finish
-        # closing the previous hour. After that, retry continuously until success.
-        if _seconds_into_hour(local_now) >= cfg.report_grace_seconds:
+        # Exact-hour mode: the slot becomes due immediately at HH:00.
+        # The loop checks every ~2 seconds, so the update starts at the first tick after HH:00.
+        # If the backend is briefly not ready, normal retry logic handles it without waiting an hour.
+        if _seconds_into_hour(local_now) >= 0:
             slot_key, slot_label = _slot_key(local_now, cfg)
             if state.get_last_successful_slot() != slot_key and loop_now >= next_report_retry_at:
                 try:

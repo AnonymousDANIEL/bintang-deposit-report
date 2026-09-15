@@ -16,3 +16,7 @@ Railway:
     SITE_TRACKING_CODE=
 
 Security note: this automates the normal login fields. It does not bypass CAPTCHA or 2FA. If the account later requires an interactive challenge, that challenge must be satisfied legitimately.
+
+
+## EXACT HOUR scheduling
+This build starts the hourly report at HH:00 (first daemon loop tick) and does not wait an extra 60 seconds.

@@ -108,6 +108,7 @@ class Config:
             session_guard_enabled=_bool("SESSION_GUARD_ENABLED", True),
             session_guard_seconds=max(15, _int("SESSION_GUARD_SECONDS", 30)),
             auth_relogin_retries=max(1, _int("AUTH_RELOGIN_RETRIES", 5)),
-            report_grace_seconds=max(0, _int("REPORT_GRACE_SECONDS", 60)),
+            # Exact-hour build: run immediately at HH:00; do not wait +1 minute.
+            report_grace_seconds=0,
             report_retry_seconds=max(5, _int("REPORT_RETRY_SECONDS", 30)),
         )
